@@ -1,0 +1,39 @@
+{
+  "name": "latest-b2g-api",
+  "version": "0.0.1",
+  "description": "Find the latest version of Gecko",
+  "main": "index.js",
+  "directories": {
+    "test": "test"
+  },
+  "scripts": {
+    "test": "make tests"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jhford/latest-b2g-api"
+  },
+  "keywords": [
+    "gecko",
+    "b2g"
+  ],
+  "author": "John Ford",
+  "license": "BSD",
+  "bugs": {
+    "url": "https://github.com/jhford/latest-b2g-api/issues"
+  },
+  "homepage": "https://github.com/jhford/latest-b2g-api",
+  "dependencies": {
+    "async": "^0.9.0",
+    "bunyan": "^1.0.1",
+    "jsdom": "^0.11.0",
+    "request": "^2.42.0",
+    "restify": "^2.8.2",
+    "uuid": "^1.4.1"
+  },
+  "devDependencies": {
+    "mocha": "^1.21.4",
+    "should": "^4.0.4",
+    "sinon": "^1.10.3"
+  }
+}
