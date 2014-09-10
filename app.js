@@ -28,7 +28,7 @@ if (fs.existsSync(cacheFile)) {
 }
 
 // Maximum age in the cache in minutes
-var maxAge = process.env.MAX_CACHE_AGE || 1;
+var maxAge = process.env.MAX_CACHE_AGE || 20;
 
 function store(branch, data) {
   log.info('Storing updated data for %s in the cache', branch);
@@ -97,6 +97,16 @@ function getForBranch(req, res, next) {
 
 server.get('/branch/:branch', getForBranch);
 server.head('/branch/:branch', getForBranch);
+
+server.get('/', function(req, res, next) {
+  res.send(200, 'Hello');
+  next();
+});
+
+server.get('/full-cache', function(req, res, next) {
+  res.send(200, cache);
+  next();
+});
 
 var port = process.env.PORT || 7400;
 server.listen(port, function () {
