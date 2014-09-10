@@ -4,6 +4,7 @@ var path = require('path');
 var fork = require('child_process').fork;
 var fs = require('fs');
 
+var async = require('async');
 var restify = require('restify');
 
 //var pf = require('./platform_files');
@@ -14,6 +15,8 @@ var server = restify.createServer();
 
 var cacheFile = 'cache.json';
 var cache = {};
+// Maximum age in the cache in minutes
+var maxAge = process.env.MAX_CACHE_AGE || 20;
 
 if (fs.existsSync(cacheFile)) {
   log.info('Reading cache from file');
@@ -27,8 +30,29 @@ if (fs.existsSync(cacheFile)) {
   }
 }
 
-// Maximum age in the cache in minutes
-var maxAge = process.env.MAX_CACHE_AGE || 20;
+function warmCache() {
+  log.info('Warming the cache!');
+  async.map(Object.keys(cache),
+    function(branch, callback) {
+      fetch(branch, function(err, result) {
+        if (err) {
+          log.error('Error while warming cache for %s', branch);
+          callback(null, false);
+        }
+        log.info('Cached warmed for %s', branch);
+        callback(null, true);
+      });
+    },
+    function(err, results) {
+    if (err) {
+      log.error(err, 'Error warming the cache');
+    }
+    log.info('Warmed caches');
+  });
+}
+
+warmCache();
+setInterval(warmCache, maxAge * 60 * 500);
 
 function store(branch, data) {
   log.info('Storing updated data for %s in the cache', branch);
@@ -49,6 +73,7 @@ function fetch(branch, callback) {
 
   child.on('message', function(msg) {
     child.kill();
+    store(branch, msg.contents);
     callback(null, msg.contents);
   });
 
@@ -74,7 +99,6 @@ function retreive(branch, callback) {
           callback(new Error('I have no possible data to return'));
         }
       }
-      store(branch, data);
       callback(null, data);
     });
   } else if (cache[branch].data) {
