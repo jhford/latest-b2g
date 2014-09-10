@@ -2,51 +2,97 @@
 
 var path = require('path');
 var fork = require('child_process').fork;
+var fs = require('fs');
 
 var restify = require('restify');
-var uuid = require('uuid');
 
 //var pf = require('./platform_files');
 var logging = require('./logging');
 var log = logging.setup(__filename);
 
-var child = fork(path.join(__dirname, 'find_platform_files.js'));
-
-child.once('error', function(err) {
-  log.error(err, 'Error in child process');
-  process.exit(1);
-});
-
-child.once('disconnect', function() {
-  log.error('Child disconnected');
-  process.exit(1);
-});
-
 var server = restify.createServer();
 
-function getForBranch(req, res, next) {
-  log.info('Finding information for branch %s', req.params.branch);
-  var token = uuid.v4();
+var cacheFile = 'cache.json';
+var cache = {};
 
-  var listener = function (msg) {
-    if (msg.token === token) {
-      log.info('Received the message we were waiting for %', token);
-      res.send(msg.contents);
-      child.removeListener('message', listener);
-    } else {
-      log.info('Received a message for another consumer %s', msg.token);
-    }
+if (fs.existsSync(cacheFile)) {
+  log.info('Reading cache from file');
+  try {
+    cache = JSON.parse(fs.readFileSync(cacheFile));
+    log.info('Read cached data');
+  } catch (e) {
+    var brokenFileName = cacheFile + '-broken-' + String(Date.now())
+    fs.renameSync(cacheFile, brokenFileName);
+    log.info('There was an invalid cache file, moved to %s', brokenFileName);
   }
+}
 
-  child.on('message', listener); 
+// Maximum age in the cache in minutes
+var maxAge = process.env.MAX_CACHE_AGE || 1;
+
+function store(branch, data) {
+  log.info('Storing updated data for %s in the cache', branch);
+  cache[branch] = {
+    lastFetched: Date.now(),
+    data: data
+  };
+  fs.writeFileSync(cacheFile, JSON.stringify(cache, null, 2));
+}
+
+function fetch(branch, callback) {
+  var child = fork(path.join(__dirname, 'find_platform_files.js'));
+
+  child.on('error', function(err) {
+    log.error(err, 'Error in child process');
+    callback(err);
+  });
+
+  child.on('message', function(msg) {
+    child.kill();
+    callback(null, msg.contents);
+  });
 
   try {
-    child.send({branch: req.params.branch, token: token});
+    child.send({branch: branch});
   } catch (err) {
     log.error(err, 'Error in child process');
-    res.send(500, 'Error!');
-    process.exit(1);
+    callback(err);
   }
+}
+
+function retreive(branch, callback) {
+  if (!cache[branch] || (Date.now() - cache[branch].lastFetched) >= 1000 * 60 * maxAge) {
+    log.info('Data missing or expired in cache, fetching');
+    fetch(branch, function(err, data) {
+      if (err) {
+        log.error(err, 'Non-fatal error');
+        if (cache[branch]) {
+          log.info('I have a previous version, returning that');
+          callback(null, cache[branch].data);
+        }
+        else {
+          callback(new Error('I have no possible data to return'));
+        }
+      }
+      store(branch, data);
+      callback(null, data);
+    });
+  } else if (cache[branch].data) {
+    log.info('Data found in the cache, returning');
+    callback(null, cache[branch].data)
+  } else {
+    callback(new Error('Missing data from cache'));
+  }
+}
+
+function getForBranch(req, res, next) {
+  retreive(req.params.branch, function(err, data) {
+    if (err) {
+      res.send(500, err);
+      next();
+    }
+    res.send(200, data);
+  });
 }
 
 server.get('/branch/:branch', getForBranch);
@@ -54,5 +100,5 @@ server.head('/branch/:branch', getForBranch);
 
 var port = process.env.PORT || 7400;
 server.listen(port, function () {
-  log.info('Set up server on port %s', port); 
+  log.info('Set up server on port %s', port);
 });
